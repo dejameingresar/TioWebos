@@ -1,0 +1,42 @@
+name: Calidad - SonarQube
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  sonarqube:
+    name: Analisis con SonarQube
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Ejecutar comprobaciones
+        run: pwsh -NoProfile -File app/tests/Humo.ps1
+      - name: Verificar token
+        id: token
+        run: |
+          if [ -z "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "hay=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No hay SONAR_TOKEN configurado; se omite el escaneo."
+          else
+            echo "hay=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Analisis con SonarQube
+        if: steps.token.outputs.hay == 'true'
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      - name: Esperar Quality Gate
+        if: steps.token.outputs.hay == 'true'
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 10
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
