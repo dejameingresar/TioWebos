@@ -258,9 +258,9 @@ $btnProbar.Add_Click({
 $btnPerma.Add_Click({
     Apply-ModeToConfig
     if (Test-Path $installScript) {
-        Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$installScript`" -ConfigPath `"$configPath`"" -Verb RunAs
+        Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$installScript`" -ConfigPath `"$configPath`""
         $txtEstado.Text = "Estado: activado permanente"
-        [System.Windows.MessageBox]::Show("Tarea programada creada. Se iniciara al arrancar Windows.")
+        [System.Windows.MessageBox]::Show("Activacion permanente creada. Se iniciara al arrancar Windows.")
     } else {
         [System.Windows.MessageBox]::Show("No se encontro Instalar.ps1")
     }

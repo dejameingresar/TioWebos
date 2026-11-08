@@ -1,4 +1,4 @@
-# DiskGuardian - vigilante de disco de bajo consumo
+﻿# DiskGuardian - vigilante de disco de bajo consumo
 # Detecta el proceso que satura el disco (por %/latencia si los contadores funcionan,
 # o por MB/s via CIM si estan rotos) y lo mata si se mantiene N minutos.
 # No toca procesos de sistema. Todo queda en el log.
@@ -224,5 +224,3 @@ while ($true) {
     }
   }
 }
-PS
-Write-Host "written"
