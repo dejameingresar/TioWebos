@@ -23,7 +23,14 @@ foreach ($f in $files) {
 }
 $gui = Join-Path $installDir "app\DiskGuardianGUI.ps1"
 if (Test-Path $gui) {
-    Start-Process powershell -ArgumentList "-Sta -ExecutionPolicy Bypass -File `"$gui`"" 
+    # Crear comando global 'tiodisk' (como 'hermes')
+    $shimDir = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps"
+    if (-not (Test-Path $shimDir)) { New-Item -ItemType Directory -Path $shimDir -Force | Out-Null }
+    $shim = Join-Path $shimDir "tiodisk.cmd"
+    $content = "@echo off`r`npowershell -Sta -ExecutionPolicy Bypass -File `"$installDir\app\DiskGuardianGUI.ps1`" %*"
+    Set-Content -Path $shim -Value $content -Encoding ASCII
+    Write-Host "Comando 'tiodisk' instalado. Abre una nueva terminal y escribe: tiodisk"
+    Start-Process powershell -ArgumentList "-Sta -ExecutionPolicy Bypass -File `"$gui`""
 } else {
     Write-Host "GUI no disponible."
 }

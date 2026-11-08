@@ -5,6 +5,8 @@
 irm https://raw.githubusercontent.com/dejameingresar/DiskGuardian/main/install.ps1 | iex
 ```
 
+Después de instalar, abre una terminal y escribe `tiodisk` para abrir la GUI.
+
 Vigilante de disco de bajo consumo para Windows. Detecta el proceso que satura el disco (por `% Disk Time`/latencia si los contadores funcionan, o por MB/s via CIM si estan rotos) y lo mata si se mantiene N minutos. No toca procesos de sistema.
 
 ## Requisitos
