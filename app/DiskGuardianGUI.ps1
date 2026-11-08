@@ -16,7 +16,8 @@ $presets = @{
 }
 
 function Get-PerfSnapshot {
-    $res = @{ Pct=0; LatMs=0; Top=@() }
+    $res = @{ Pct=0; LatMs=0; Top=@(); CpuPct=0; CpuTop=@(); RamUsedMB=0; RamTotalMB=0; RamTop=@() }
+    # Disk
     try {
         $d = Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk -ErrorAction Stop | Where-Object { $_.Name -eq '_Total' } | Select-Object -First 1
         if ($d) { $res.Pct = [math]::Round($d.PercentDiskTime,1); $res.LatMs = [math]::Round($d.AvgDisksecPerTransfer*1000,1) }
@@ -29,6 +30,37 @@ function Get-PerfSnapshot {
             $gp = Get-Process -Id $p.IDProcess -ErrorAction SilentlyContinue
             $name = if ($gp) { $gp.ProcessName } else { $p.Name }
             $res.Top += [pscustomobject]@{ Name=$name; Pid=$p.IDProcess; MBs=[math]::Round($p.IODataBytesPersec/1MB,2) }
+        }
+    } catch {}
+    # CPU
+    try {
+        $cpu = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -ErrorAction Stop | Where-Object { $_.Name -eq '_Total' } | Select-Object -First 1
+        if ($cpu) { $res.CpuPct = [math]::Round($cpu.PercentProcessorTime,1) }
+    } catch {}
+    try {
+        $cpus = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -ErrorAction Stop |
+            Where-Object { $_.Name -notin '_Total','Idle' -and $_.IDProcess -gt 0 } |
+            Sort-Object PercentProcessorTime -Descending | Select-Object -First 8
+        foreach ($p in $cpus) {
+            $gp = Get-Process -Id $p.IDProcess -ErrorAction SilentlyContinue
+            $name = if ($gp) { $gp.ProcessName } else { $p.Name }
+            $res.CpuTop += [pscustomobject]@{ Name=$name; Pid=$p.IDProcess; Cpu=[math]::Round($p.PercentProcessorTime,1) }
+        }
+    } catch {}
+    # RAM
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $res.RamTotalMB = [math]::Round($os.TotalVisibleMemorySize/1024,0)
+        $res.RamUsedMB = [math]::Round(($os.TotalVisibleMemorySize - $os.FreePhysicalMemory)/1024,0)
+    } catch {}
+    try {
+        $mems = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -ErrorAction Stop |
+            Where-Object { $_.Name -notin '_Total','Idle' -and $_.IDProcess -gt 0 } |
+            Sort-Object WorkingSet -Descending | Select-Object -First 8
+        foreach ($p in $mems) {
+            $gp = Get-Process -Id $p.IDProcess -ErrorAction SilentlyContinue
+            $name = if ($gp) { $gp.ProcessName } else { $p.Name }
+            $res.RamTop += [pscustomobject]@{ Name=$name; Pid=$p.IDProcess; MB=[math]::Round($p.WorkingSet/1MB,1) }
         }
     } catch {}
     return $res
@@ -83,6 +115,40 @@ function Get-PerfSnapshot {
       </DataGrid>
     </GroupBox>
 
+    <GroupBox Header="CPU" Margin="0,0,0,10">
+      <StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+          <TextBlock Text="CPU: " FontWeight="Bold"/>
+          <TextBlock x:Name="txtCpu" Text="0%"/>
+        </StackPanel>
+        <DataGrid x:Name="dgCpu" AutoGenerateColumns="False" IsReadOnly="True" Height="120">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Proceso" Binding="{Binding Name}" Width="*"/>
+            <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="80"/>
+            <DataGridTextColumn Header="CPU %" Binding="{Binding Cpu}" Width="80"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <Button x:Name="btnKillCpu" Content="Matar seleccionado" Width="130" Margin="0,6,0,0"/>
+      </StackPanel>
+    </GroupBox>
+
+    <GroupBox Header="RAM" Margin="0,0,0,10">
+      <StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+          <TextBlock Text="Usada: " FontWeight="Bold"/>
+          <TextBlock x:Name="txtRam" Text="0 / 0 MB"/>
+        </StackPanel>
+        <DataGrid x:Name="dgRam" AutoGenerateColumns="False" IsReadOnly="True" Height="120">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="Proceso" Binding="{Binding Name}" Width="*"/>
+            <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="80"/>
+            <DataGridTextColumn Header="MB" Binding="{Binding MB}" Width="80"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <Button x:Name="btnKillRam" Content="Matar seleccionado" Width="130" Margin="0,6,0,0"/>
+      </StackPanel>
+    </GroupBox>
+
     <GroupBox Header="Log" Margin="0,0,0,10">
       <TextBox x:Name="txtLog" IsReadOnly="True" VerticalScrollBarVisibility="Auto" Height="160" FontFamily="Consolas" FontSize="11"/>
     </GroupBox>
@@ -106,6 +172,12 @@ $txtLat = $window.FindName("txtLat")
 $txtMode = $window.FindName("txtMode")
 $dgTop = $window.FindName("dgTop")
 $txtLog = $window.FindName("txtLog")
+$dgCpu = $window.FindName("dgCpu")
+$txtCpu = $window.FindName("txtCpu")
+$dgRam = $window.FindName("dgRam")
+$txtRam = $window.FindName("txtRam")
+$btnKillCpu = $window.FindName("btnKillCpu")
+$btnKillRam = $window.FindName("btnKillRam")
 $btnRefresh = $window.FindName("btnRefresh")
 $btnStop = $window.FindName("btnStop")
 $btnKill = $window.FindName("btnKill")
@@ -148,6 +220,10 @@ function Update-UI {
     $txtPct.Text = "$($r.Pct)%"
     $txtLat.Text = "$($r.LatMs) ms"
     $dgTop.ItemsSource = $r.Top
+    $txtCpu.Text = "$($r.CpuPct)%"
+    $dgCpu.ItemsSource = $r.CpuTop
+    $txtRam.Text = "$($r.RamUsedMB) / $($r.RamTotalMB) MB"
+    $dgRam.ItemsSource = $r.RamTop
     $logPath = "$env:TEMP\disk-guardian.log"
     if (Test-Path $logPath) {
         $lines = Get-Content $logPath -Tail 40
@@ -211,7 +287,39 @@ $btnKill.Add_Click({
         [System.Windows.MessageBox]::Show("No se pudo matar: $($_.Exception.Message)")
     }
 })
+    if (-not $sel) { [System.Windows.MessageBox]::Show("Selecciona un proceso."); return }
+    try {
+        Stop-Process -Id $sel.Pid -Force -ErrorAction Stop
+        [System.Windows.MessageBox]::Show("Proceso $($sel.Name) (PID $($sel.Pid)) terminado.")
+        Update-UI
+    } catch {
+        [System.Windows.MessageBox]::Show("No se pudo matar: $($_.Exception.Message)")
+    }
+})
 
+$btnKillRam.Add_Click({
+    $sel = $dgRam.SelectedItem
+    if (-not $sel) { [System.Windows.MessageBox]::Show("Selecciona un proceso."); return }
+    try {
+        Stop-Process -Id $sel.Pid -Force -ErrorAction Stop
+        [System.Windows.MessageBox]::Show("Proceso $($sel.Name) (PID $($sel.Pid)) terminado.")
+        Update-UI
+    } catch {
+        [System.Windows.MessageBox]::Show("No se pudo matar: $($_.Exception.Message)")
+    }
+})
+
+$btnKillCpu.Add_Click({
+    $sel = $dgCpu.SelectedItem
+    if (-not $sel) { [System.Windows.MessageBox]::Show("Selecciona un proceso."); return }
+    try {
+        Stop-Process -Id $sel.Pid -Force -ErrorAction Stop
+        [System.Windows.MessageBox]::Show("Proceso $($sel.Name) (PID $($sel.Pid)) terminado.")
+        Update-UI
+    } catch {
+        [System.Windows.MessageBox]::Show("No se pudo matar: $($_.Exception.Message)")
+    }
+})
 $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromSeconds(3)
 $timer.Add_Tick({ Update-UI })

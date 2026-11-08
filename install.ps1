@@ -1,10 +1,10 @@
-# DiskGuardian installer (one-liner):
-# irm https://raw.githubusercontent.com/dejameingresar/DiskGuardian/main/install.ps1 | iex
+# TioWebos installer (one-liner):
+# irm https://raw.githubusercontent.com/dejameingresar/TioWebos/main/install.ps1 | iex
 $ErrorActionPreference = "Stop"
-$repo = "dejameingresar/DiskGuardian"
+$repo = "dejameingresar/TioWebos"
 $branch = "main"
 $base = "https://raw.githubusercontent.com/$repo/$branch"
-$installDir = Join-Path $env:LOCALAPPDATA "DiskGuardian"
+$installDir = Join-Path $env:LOCALAPPDATA "TioWebos"
 $files = @(
   "app\DiskGuardian.ps1",
   "app\DiskGuardianGUI.ps1",
