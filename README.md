@@ -1,5 +1,7 @@
 # TioWebos
 
+Programa de optimizacion para Windows (secciones: Disco, CPU, RAM).
+
 **Instalación rápida (como WinUtil):**
 ```powershell
 irm https://raw.githubusercontent.com/dejameingresar/DiskGuardian/main/install.ps1 | iex
