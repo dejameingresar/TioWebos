@@ -89,7 +89,6 @@ function Get-PerfSnapshot {
 
     <StackPanel Orientation="Horizontal">
       <Button x:Name="btnRefresh" Content="Refrescar" Width="90" Margin="0,0,6,0"/>
-      <Button x:Name="btnStart" Content="Iniciar guardian" Width="110" Margin="0,0,6,0"/>
       <Button x:Name="btnStop" Content="Detener" Width="80" Margin="0,0,6,0"/>
       <Button x:Name="btnKill" Content="Matar seleccionado" Width="130" Margin="0,0,6,0"/>
       <CheckBox x:Name="chkDry" Content="DryRun" VerticalAlignment="Center" Margin="10,0,0,0"/>
@@ -108,7 +107,6 @@ $txtMode = $window.FindName("txtMode")
 $dgTop = $window.FindName("dgTop")
 $txtLog = $window.FindName("txtLog")
 $btnRefresh = $window.FindName("btnRefresh")
-$btnStart = $window.FindName("btnStart")
 $btnStop = $window.FindName("btnStop")
 $btnKill = $window.FindName("btnKill")
 $chkDry = $window.FindName("chkDry")
@@ -184,14 +182,6 @@ $btnPerma.Add_Click({
     } else {
         [System.Windows.MessageBox]::Show("No se encontro Instalar.ps1")
     }
-})
-
-$btnStart.Add_Click({
-    Apply-ModeToConfig
-    $args = "-ExecutionPolicy Bypass -File `"$mainScript`" -ConfigPath `"$configPath`""
-    if ($chkDry.IsChecked) { $args += " -DryRun" }
-    $script:guardianJob = Start-Process powershell -ArgumentList $args -WindowStyle Hidden -PassThru
-    $txtEstado.Text = "Estado: guardian activo (PID $($script:guardianJob.Id))"
 })
 
 $btnStop.Add_Click({
