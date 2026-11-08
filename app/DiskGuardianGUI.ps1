@@ -284,19 +284,10 @@ $btnKill.Add_Click({
         [System.Windows.MessageBox]::Show("Proceso $($sel.Name) (PID $($sel.Pid)) terminado.")
         Update-UI
     } catch {
-        [System.Windows.MessageBox]::Show("No se pudo matar: $($_.Exception.Message)")
+        $errMsg = $_.Exception.Message
+        [System.Windows.MessageBox]::Show("No se pudo matar: $errMsg")
     }
 })
-    if (-not $sel) { [System.Windows.MessageBox]::Show("Selecciona un proceso."); return }
-    try {
-        Stop-Process -Id $sel.Pid -Force -ErrorAction Stop
-        [System.Windows.MessageBox]::Show("Proceso $($sel.Name) (PID $($sel.Pid)) terminado.")
-        Update-UI
-    } catch {
-        [System.Windows.MessageBox]::Show("No se pudo matar: $($_.Exception.Message)")
-    }
-})
-
 $btnKillRam.Add_Click({
     $sel = $dgRam.SelectedItem
     if (-not $sel) { [System.Windows.MessageBox]::Show("Selecciona un proceso."); return }
@@ -305,7 +296,8 @@ $btnKillRam.Add_Click({
         [System.Windows.MessageBox]::Show("Proceso $($sel.Name) (PID $($sel.Pid)) terminado.")
         Update-UI
     } catch {
-        [System.Windows.MessageBox]::Show("No se pudo matar: $($_.Exception.Message)")
+        $errMsg = $_.Exception.Message
+        [System.Windows.MessageBox]::Show("No se pudo matar: $errMsg")
     }
 })
 
@@ -317,7 +309,8 @@ $btnKillCpu.Add_Click({
         [System.Windows.MessageBox]::Show("Proceso $($sel.Name) (PID $($sel.Pid)) terminado.")
         Update-UI
     } catch {
-        [System.Windows.MessageBox]::Show("No se pudo matar: $($_.Exception.Message)")
+        $errMsg = $_.Exception.Message
+        [System.Windows.MessageBox]::Show("No se pudo matar: $errMsg")
     }
 })
 $timer = New-Object System.Windows.Threading.DispatcherTimer
