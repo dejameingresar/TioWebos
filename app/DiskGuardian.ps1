@@ -1,7 +1,7 @@
-﻿# DiskGuardian - vigilante de disco de bajo consumo
+# DiskGuardian - vigilante de disco de bajo consumo (prototipo: SOLO disco)
 # Detecta el proceso que satura el disco (por %/latencia si los contadores funcionan,
 # o por MB/s via CIM si estan rotos) y lo mata si se mantiene N minutos.
-# No toca procesos de sistema. Todo queda en el log.
+# No toca procesos de sistema. Cierre graceful antes de matar. Todo queda en el log.
 #
 # Uso:
 #   powershell -ExecutionPolicy Bypass -File .\DiskGuardian.ps1
@@ -19,14 +19,15 @@ param(
 $ErrorActionPreference = "SilentlyContinue"
 
 $DefaultConfig = @{
-  UmbralTotalMBs    = 3        # MB/s totales para considerar saturacion (modo CIM)
-  UmbralProcMBs     = 1        # MB/s del proceso dominante
+  UmbralTotalMBs    = 10       # MB/s totales para considerar saturacion (modo CIM)
+  UmbralProcMBs     = 3        # MB/s del proceso dominante
   UmbralPct         = 85       # % Disk Time (modo contadores)
   UmbralLatenciaMs  = 100      # ms Avg Disk sec/Transfer (modo contadores)
   MinutosParaMatar  = 5        # minutos sostenidos antes de matar
   IntervaloSeg      = 30       # segundos entre chequeos
   LogMaxMB          = 5        # rotacion de log
-  LogPath           = "$env:TEMP\disk-guardian.log"
+  LogPath           = "%TEMP%\disk-guardian.log"
+  Protegidos        = @()      # nombres extra que nunca se matan, ej: @('obs64.exe','idea64.exe')
 }
 
 function Load-Config($path) {
@@ -34,9 +35,17 @@ function Load-Config($path) {
   if ($path -and (Test-Path $path)) {
     try {
       $j = Get-Content $path -Raw | ConvertFrom-Json
-      foreach ($k in $j.PSObject.Properties.Name) { $cfg[$k] = $j.$k }
+      foreach ($k in $j.PSObject.Properties.Name) {
+        if ($cfg.ContainsKey($k)) { $cfg[$k] = $j.$k }
+      }
     } catch {}
   }
+  # LogPath portable: expande %VAR% y acepta vacio (= default)
+  try {
+    if ([string]::IsNullOrWhiteSpace($cfg.LogPath)) { $cfg.LogPath = $DefaultConfig.LogPath }
+    $cfg.LogPath = [System.Environment]::ExpandEnvironmentVariables($cfg.LogPath)
+  } catch {}
+  if (-not $cfg.Protegidos) { $cfg.Protegidos = @() }
   return $cfg
 }
 
@@ -48,10 +57,13 @@ $Criticos = @('system','registry','memory compression','smss.exe','csrss.exe','w
   'svchost.exe','sihost.exe','ctfmon.exe','explorer.exe','audiodg.exe','conhost.exe',
   'taskhostw.exe','idle','secure system','registry')
 
-function Es-Sistema($nombre, $ruta, $pid) {
-  if ($pid -le 4) { return $true }
+function Es-Sistema($nombre, $ruta, $ProcId) {
+  if ($ProcId -le 4) { return $true }
   if ([string]::IsNullOrEmpty($nombre)) { return $true }
   if ($Criticos -contains $nombre.ToLower()) { return $true }
+  foreach ($p in $cfg.Protegidos) {
+    if ($nombre.ToLower() -eq ([string]$p).ToLower()) { return $true }
+  }
   if ([string]::IsNullOrEmpty($ruta)) { return $true }
   $rl = $ruta.ToLower()
   if ($rl.StartsWith($env:SystemRoot.ToLower())) { return $true }
@@ -73,6 +85,17 @@ function Write-Log($msg) {
     $line | Out-File -FilePath $LogPath -Append -Encoding utf8
   } catch {}
   Write-Host $line
+}
+
+# Cierre graceful: pide cierre normal, espera 8s, y solo entonces fuerza.
+function Stop-ProcesoSuave($ProcId) {
+  try {
+    $pr = Get-Process -Id $ProcId -ErrorAction Stop
+    try { $pr.CloseMainWindow() | Out-Null } catch {}
+    if ($pr.WaitForExit(8000)) { return "cerrado-graceful" }
+  } catch {}
+  Stop-Process -Id $ProcId -Force -ErrorAction Stop
+  return "forzado"
 }
 
 function Test-PerfWMI {
@@ -120,11 +143,34 @@ function Get-PerfSnapshot {
   return $res
 }
 
-# Estado sostenido por proceso (nombre base)
+# Registra un cheque sostenido. Clave = nombre+PID: si el PID cambia, el conteo reinicia.
+function Add-Cheque($clave, $ProcId) {
+  if (-not $historial.ContainsKey($clave)) { $historial[$clave] = @{ Veces=1; Pid=$ProcId } }
+  else { $historial[$clave].Veces++; $historial[$clave].Pid = $ProcId }
+  foreach ($k in @($historial.Keys)) { if ($k -ne $clave) { $historial.Remove($k) } }
+  return $historial[$clave].Veces
+}
+
+function Invoke-Matar($nombre, $ProcId, $detalle) {
+  if ($DryRun) {
+    Write-Log "DRYRUN: habria matado $nombre PID $ProcId. $detalle"
+    return
+  }
+  try {
+    if ($ProcId -gt 0) {
+      $modo = Stop-ProcesoSuave $ProcId
+      Write-Log "MATADO $nombre PID $ProcId ($modo) tras $($cfg.MinutosParaMatar)min. $detalle"
+    }
+  } catch {
+    Write-Log ("NO SE PUDO MATAR " + $nombre + " PID " + $ProcId + ": " + $_.Exception.Message)
+  }
+}
+
+# Estado sostenido por proceso (clave nombre+PID)
 $historial = @{}
 $necesarias = [math]::Ceiling(($cfg.MinutosParaMatar*60)/$cfg.IntervaloSeg)
 
-Write-Log "Guardian iniciado. Modo=$(if($UsePerfWMI){'perf WMI'}else{'CIM deltas'}). Umbrales: total>$($cfg.UmbralTotalMBs)MB/s proc>$($cfg.UmbralProcMBs)MB/s pct>$($cfg.UmbralPct)% lat>$($cfg.UmbralLatenciaMs)ms. Matar tras $($cfg.MinutosParaMatar)min ($necesarias cheques). Intervalo $($cfg.IntervaloSeg)s. DryRun=$DryRun"
+Write-Log "Guardian iniciado. Modo=$(if($UsePerfWMI){'perf WMI'}else{'CIM deltas (mide I/O total, no solo disco)'}). Umbrales: total>$($cfg.UmbralTotalMBs)MB/s proc>$($cfg.UmbralProcMBs)MB/s pct>$($cfg.UmbralPct)% lat>$($cfg.UmbralLatenciaMs)ms. Matar tras $($cfg.MinutosParaMatar)min ($necesarias cheques). Intervalo $($cfg.IntervaloSeg)s. DryRun=$DryRun"
 
 if ($Once) {
   if ($UsePerfWMI) {
@@ -154,39 +200,28 @@ while ($true) {
     $gPid = if ($g) { $g.Pid } else { 0 }
     $gPath = if ($g) { $g.Path } else { $null }
     if (Es-Sistema $gName $gPath $gPid) {
-      Write-Log "SATURADO pct=$($r.Pct)% lat=$($r.LatMs)ms pero es SISTEMA ($gName): $topTxt"
+      Write-Log "SATURADO pct=$($r.Pct)% lat=$($r.LatMs)ms pero es SISTEMA/protegido ($gName): $topTxt"
       $historial.Clear()
       continue
     }
-    if (-not $historial.ContainsKey($gName)) { $historial[$gName] = @{ Veces=1; Pid=$gPid } }
-    else { $historial[$gName].Veces++; $historial[$gName].Pid = $gPid }
-    $v = $historial[$gName].Veces
-    foreach ($k in @($historial.Keys)) { if ($k -ne $gName) { $historial.Remove($k) } }
+    $clave = "$gName#$gPid"
+    $v = Add-Cheque $clave $gPid
     Write-Log "SATURADO pct=$($r.Pct)% lat=$($r.LatMs)ms culpable=$gName PID $gPid ($v/$necesarias): $topTxt"
     if ($v -ge $necesarias) {
-      if ($DryRun) {
-        Write-Log "DRYRUN: habria matado $gName PID $gPid"
-      } else {
-        try {
-          if ($gPid -gt 0) { Stop-Process -Id $gPid -Force -ErrorAction Stop }
-          Write-Log "MATADO $gName PID $gPid tras $($cfg.MinutosParaMatar)min. pct=$($r.Pct)% lat=$($r.LatMs)ms"
-        } catch {
-          Write-Log ("NO SE PUDO MATAR " + $gName + " PID " + $gPid + ": " + $_.Exception.Message)
-        }
-      }
-      $historial.Remove($gName)
+      Invoke-Matar $gName $gPid "pct=$($r.Pct)% lat=$($r.LatMs)ms"
+      $historial.Remove($clave)
     }
   } else {
     $curr = Get-SnapshotCIM
     $tasas = @()
     $totalBs = 0
-    foreach ($pid in $curr.Keys) {
-      if (-not $prev.ContainsKey($pid)) { continue }
-      $d = $curr[$pid].Total - $prev[$pid].Total
+    foreach ($procId in $curr.Keys) {
+      if (-not $prev.ContainsKey($procId)) { continue }
+      $d = $curr[$procId].Total - $prev[$procId].Total
       if ($d -lt 0) { $d = 0 }
       $bs = $d / $cfg.IntervaloSeg
       $totalBs += $bs
-      if ($bs -gt 0) { $tasas += [pscustomobject]@{ Pid=$pid; Name=$curr[$pid].Name; Path=$curr[$pid].Path; Bs=$bs } }
+      if ($bs -gt 0) { $tasas += [pscustomobject]@{ Pid=$procId; Name=$curr[$procId].Name; Path=$curr[$procId].Path; Bs=$bs } }
     }
     $prev = $curr
     $totalMBs = [math]::Round($totalBs/1MB,2)
@@ -201,26 +236,15 @@ while ($true) {
     $gMBs = [math]::Round($g.Bs/1MB,2)
     $base = $g.Name
     if (Es-Sistema $g.Name $g.Path $g.Pid) {
-      Write-Log "SATURADO total=${totalMBs}MB/s pero es SISTEMA ($base PID $($g.Pid)): $topTxt"
+      Write-Log "SATURADO total=${totalMBs}MB/s pero es SISTEMA/protegido ($base PID $($g.Pid)): $topTxt"
       continue
     }
-    if (-not $historial.ContainsKey($base)) { $historial[$base] = @{ Veces=1; Pid=$g.Pid } }
-    else { $historial[$base].Veces++; $historial[$base].Pid = $g.Pid }
-    $v = $historial[$base].Veces
-    foreach ($k in @($historial.Keys)) { if ($k -ne $base) { $historial.Remove($k) } }
+    $clave = "$base#$($g.Pid)"
+    $v = Add-Cheque $clave $g.Pid
     Write-Log "SATURADO total=${totalMBs}MB/s culpable=$base PID $($g.Pid) ${gMBs}MB/s ($v/$necesarias): $topTxt"
     if ($v -ge $necesarias) {
-      if ($DryRun) {
-        Write-Log "DRYRUN: habria matado $base PID $($g.Pid)"
-      } else {
-        try {
-          Stop-Process -Id $g.Pid -Force -ErrorAction Stop
-          Write-Log "MATADO $base PID $($g.Pid) tras $($cfg.MinutosParaMatar)min a ${gMBs}MB/s. Total=${totalMBs}MB/s"
-        } catch {
-          Write-Log ("NO SE PUDO MATAR " + $base + " PID " + $g.Pid + ": " + $_.Exception.Message)
-        }
-      }
-      $historial.Remove($base)
+      Invoke-Matar $base $g.Pid "a ${gMBs}MB/s. Total=${totalMBs}MB/s"
+      $historial.Remove($clave)
     }
   }
 }

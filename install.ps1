@@ -1,5 +1,8 @@
 # TioWebos installer (one-liner):
 # irm https://raw.githubusercontent.com/dejameingresar/TioWebos/main/install.ps1 | iex
+param(
+  [switch]$NoStartup
+)
 $ErrorActionPreference = "Stop"
 $repo = "dejameingresar/TioWebos"
 $branch = "main"
@@ -8,6 +11,8 @@ $installDir = Join-Path $env:LOCALAPPDATA "TioWebos"
 $files = @(
   "app\DiskGuardian.ps1",
   "app\DiskGuardianGUI.ps1",
+  "app\Instalar.ps1",
+  "app\Desinstalar.ps1",
   "config.default.json"
 )
 foreach ($f in $files) {
@@ -27,16 +32,21 @@ if (-not (Test-Path $cfgDest)) {
     $cfgSrc = Join-Path $installDir "config.default.json"
     if (Test-Path $cfgSrc) { Copy-Item $cfgSrc $cfgDest -Force }
 }
-# Startup shortcut (permanent activation)
-$startup = [Environment]::GetFolderPath('Startup')
-$shortcutPath = Join-Path $startup "TioWebos.lnk"
-$wsh = New-Object -ComObject WScript.Shell
-$sc = $wsh.CreateShortcut($shortcutPath)
-$sc.TargetPath = "powershell.exe"
-$sc.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$installDir\app\DiskGuardian.ps1`" -ConfigPath `"$installDir\config.json`""
-$sc.WorkingDirectory = $installDir
-$sc.Save()
-# tiowebos shim (renamed from tiodisk)
+# Startup shortcut (permanent activation) - opcional con -NoStartup
+if (-not $NoStartup) {
+    $startup = [Environment]::GetFolderPath('Startup')
+    $shortcutPath = Join-Path $startup "TioWebos.lnk"
+    $wsh = New-Object -ComObject WScript.Shell
+    $sc = $wsh.CreateShortcut($shortcutPath)
+    $sc.TargetPath = "powershell.exe"
+    $sc.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$installDir\app\DiskGuardian.ps1`" -ConfigPath `"$installDir\config.json`""
+    $sc.WorkingDirectory = $installDir
+    $sc.Save()
+    Write-Host "Activacion permanente: $shortcutPath (borrar con app\Desinstalar.ps1)"
+} else {
+    Write-Host "Sin activacion permanente (-NoStartup). Solo sesion actual."
+}
+# tiowebos shim
 $shimDir = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps"
 if (-not (Test-Path $shimDir)) { New-Item -ItemType Directory -Path $shimDir -Force | Out-Null }
 $shim = Join-Path $shimDir "tiowebos.cmd"
@@ -46,10 +56,9 @@ Set-Content -Path $shim -Value $shimContent -Encoding ASCII
 $oldShim = Join-Path $shimDir "tiodisk.cmd"
 if (Test-Path $oldShim) { Remove-Item $oldShim -Force }
 Write-Host "TioWebos instalado en: $installDir"
-Write-Host "Activacion permanente: $shortcutPath"
 Write-Host "Comando global: tiowebos"
+Write-Host "Desinstalar: powershell -ExecutionPolicy Bypass -File `"$installDir\app\Desinstalar.ps1`""
 $gui = Join-Path $installDir "app\DiskGuardianGUI.ps1"
 if (Test-Path $gui) {
     Start-Process powershell -ArgumentList "-Sta -ExecutionPolicy Bypass -File `"$gui`""
 }
-PS

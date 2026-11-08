@@ -1,9 +1,10 @@
 # TioWebos installer (permanent activation via Startup folder)
 param(
-  [string]$InstallDir = "C:\Users\$env:USERNAME\AppData\Local\TioWebos",
+  [string]$InstallDir = "",
   [string]$ConfigPath = ""
 )
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($InstallDir)) { $InstallDir = Join-Path $env:LOCALAPPDATA "TioWebos" }
 $src = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path $src -Parent
 if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
@@ -26,4 +27,3 @@ $sc.WorkingDirectory = $InstallDir
 $sc.Save()
 Write-Host "Instalado permanentemente. Se iniciara al arrancar Windows."
 Write-Host "Acceso directo creado en: $shortcutPath"
-PS

@@ -1,10 +1,11 @@
 {
-  "UmbralTotalMBs": 3,
-  "UmbralProcMBs": 1,
+  "UmbralTotalMBs": 10,
+  "UmbralProcMBs": 3,
   "UmbralPct": 85,
   "UmbralLatenciaMs": 100,
   "MinutosParaMatar": 5,
   "IntervaloSeg": 30,
   "LogMaxMB": 5,
-  "LogPath": "C:\\Users\\soyese\\AppData\\Local\\Temp\\disk-guardian.log"
+  "LogPath": "%TEMP%\\disk-guardian.log",
+  "Protegidos": []
 }
