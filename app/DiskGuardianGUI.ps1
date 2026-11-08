@@ -174,8 +174,6 @@ $btnProbar.Add_Click({
     $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
     $psi.CreateNoWindow = $true
     $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
     $proc = [System.Diagnostics.Process]::Start($psi)
     $script:guardianJob = $proc
     [System.Windows.MessageBox]::Show("Guardian iniciado en segundo plano (PID $($proc.Id)). Se mantiene aunque cierres esta ventana.")
