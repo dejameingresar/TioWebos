@@ -192,6 +192,15 @@ $rbAtrevido = $window.FindName("rbAtrevido")
 
 $guardianJob = $null
 
+function Find-GuardianProcess {
+    try {
+        $procs = Get-CimInstance Win32_Process -ErrorAction Stop |
+            Where-Object { $_.Name -match 'powershell' -and $_.CommandLine -match 'DiskGuardian\.ps1' }
+        if ($procs) { return ($procs | Select-Object -First 1) }
+    } catch {}
+    return $null
+}
+
 function Get-SelectedMode {
     if ($rbChill.IsChecked) { return "chill" }
     if ($rbAtrevido.IsChecked) { return "atrevido" }
@@ -233,6 +242,7 @@ function Update-UI {
 }
 
 $btnRefresh.Add_Click({ Update-UI })
+Sync-GuardianState
 
 $btnHelp.Add_Click({
     $msg = "De chill: umbrales altos, espera 10 min. Casi no mata nada.`n`n" +
@@ -252,6 +262,7 @@ $btnProbar.Add_Click({
     $psi.UseShellExecute = $false
     $proc = [System.Diagnostics.Process]::Start($psi)
     $script:guardianJob = $proc
+    Sync-GuardianState
     [System.Windows.MessageBox]::Show("Guardian iniciado en segundo plano (PID $($proc.Id)). Se mantiene aunque cierres esta ventana.")
 })
 
@@ -267,13 +278,19 @@ $btnPerma.Add_Click({
 })
 
 $btnStop.Add_Click({
-    if ($script:guardianJob -and -not $script:guardianJob.HasExited) {
+    $p = Find-GuardianProcess
+    if ($p) {
+        try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch {}
+        $txtEstado.Text = "Estado: detenido"
+        [System.Windows.MessageBox]::Show("Guardian detenido.")
+    } elseif ($script:guardianJob -and -not $script:guardianJob.HasExited) {
         Stop-Process -Id $script:guardianJob.Id -Force
         $txtEstado.Text = "Estado: detenido"
         [System.Windows.MessageBox]::Show("Guardian detenido.")
     } else {
         [System.Windows.MessageBox]::Show("No hay guardian en ejecucion.")
     }
+    Sync-GuardianState
 })
 
 $btnKill.Add_Click({
