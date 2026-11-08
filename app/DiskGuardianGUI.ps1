@@ -167,10 +167,18 @@ $btnHelp.Add_Click({
 
 $btnProbar.Add_Click({
     Apply-ModeToConfig
-    $txtEstado.Text = "Estado: probando esta sesion"
-    $args = "-ExecutionPolicy Bypass -File `"$mainScript`" -ConfigPath `"$configPath`""
-    if ($chkDry.IsChecked) { $args += " -DryRun" }
-    $script:guardianJob = Start-Process powershell -ArgumentList $args -WindowStyle Hidden -PassThru
+    $txtEstado.Text = "Estado: probando esta sesion (en segundo plano)"
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "powershell.exe"
+    $psi.Arguments = "-ExecutionPolicy Bypass -File `"$mainScript`" -ConfigPath `"$configPath`"" + $(if ($chkDry.IsChecked) { " -DryRun" } else { "" })
+    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $psi.CreateNoWindow = $true
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $script:guardianJob = $proc
+    [System.Windows.MessageBox]::Show("Guardian iniciado en segundo plano (PID $($proc.Id)). Se mantiene aunque cierres esta ventana.")
 })
 
 $btnPerma.Add_Click({
